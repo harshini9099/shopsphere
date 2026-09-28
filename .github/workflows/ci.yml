@@ -1,0 +1,61 @@
+name: Build and test ShopSphere
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: shopsphere
+          POSTGRES_USER: shopsphere
+          POSTGRES_PASSWORD: ci-demo-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U shopsphere -d shopsphere"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck && npm run build
+      - run: mvn -B -f backend/pom.xml verify
+      - run: npx playwright install --with-deps chromium
+      - name: Start backend against PostgreSQL
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/shopsphere
+          DB_USER: shopsphere
+          DB_PASSWORD: ci-demo-password
+        run: |
+          java -jar backend/target/shopsphere-1.0.0.jar > backend.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/api/health; then exit 0; fi
+            sleep 2
+          done
+          cat backend.log
+          exit 1
+      - run: npx playwright test --project=api --project=chromium
+      - name: Upload reports and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shopsphere-test-evidence
+          path: |
+            playwright-report/
+            test-results/
+            backend/target/surefire-reports/
+            backend.log
+          retention-days: 14

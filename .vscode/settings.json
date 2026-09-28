@@ -1,0 +1,6 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "files.exclude": { "**/node_modules": true, "**/target": true },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "editor.tabSize": 2
+}
